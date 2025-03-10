@@ -1,6 +1,8 @@
 const mongoose = require("mongoose");
 
 const DonationSchema = new mongoose.Schema({
+  campaignId : { type: mongoose.Schema.Types.ObjectId, ref: "Campaign", required: true },
+  campaign: {type: String},
   transactionId: { type: String },
   paymentId: { type: String },
   receipt: { type: String },

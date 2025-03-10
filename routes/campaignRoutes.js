@@ -16,22 +16,24 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Create campaign (authenticated + image upload)
-router.post("/", authMiddleware, upload.array("images", 10), campaignController.createCampaign);
+// ✅ Move `upload.array("images", 10)` BEFORE `authMiddleware`
+router.post(
+  "/",
+  upload.array("images", 10), // Process files first
+  authMiddleware, // Authenticate after files are processed
+  (req, res, next) => {
+    console.log("Incoming Request Fields:", req.body);
+    console.log("Incoming Files:", req.files);
+    next();
+  },
+  campaignController.createCampaign
+);
 
-// Update campaign (authenticated + image upload if needed)
-router.put("/:id", authMiddleware, upload.array("images", 10), campaignController.updateCampaign);
+router.put("/:id", upload.array("images", 10), authMiddleware, campaignController.updateCampaign);
 
-// Get all campaigns (public)
 router.get("/", campaignController.getCampaigns);
-
-// Get single campaign by id (public)
 router.get("/:id", campaignController.getCampaignById);
-
-// Delete campaign (authenticated)
 router.delete("/:id", authMiddleware, campaignController.deleteCampaign);
-
-// Get campaigns for the logged-in user
 router.get("/user/mycampaigns", authMiddleware, campaignController.getUserCampaigns);
 
 module.exports = router;

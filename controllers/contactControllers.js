@@ -38,8 +38,8 @@ exports.submitContactForm = async (req, res) => {
 
     // Send email notification to admin
     const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: process.env.ADMIN_EMAIL, // Admin email address
+      from: email,
+      to: process.env.EMAIL_USER, // Dev email address
       subject: `New Contact Form Submission - ${reason}`,
       text: `Name: ${name}\nEmail: ${email}\nContact: ${
         contact || "N/A"

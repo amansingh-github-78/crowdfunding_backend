@@ -1,409 +1,264 @@
-const PaymentStatus = require("../models/Payment");
+const crypto = require("crypto");
 const User = require("../models/User");
 const Campaign = require("../models/Campaign");
-const axios = require("axios");
-const crypto = require("crypto");
+const PaymentStatus = require("../models/Payment");
 
-const PAYU_KEY = process.env.PAYU_KEY;
-const PAYU_SALT = process.env.PAYU_SALT;
-const PAYU_BASE_URL = process.env.PAYU_BASE_URL;
+const PAYU_KEY = process.env.PAYU_MERCHANT_KEY;
+const PAYU_SALT = process.env.PAYU_MERCHANT_SALT;
+const PAYU_BASE_URL = process.env.PAYU_BASE_URL; // PayU API URL
 
-// Helper function to generate PayU hash
-const generatePayUHash = (params) => {
-  const hashString = `${params.txnid}|${params.amount}|${params.productinfo}|${params.firstname}|${params.email}|${PAYU_SALT}`;
-  return crypto.createHash("sha512").update(hashString).digest("hex");
-};
-
-// POST /api/payment/initiate
-exports.initiatePayment = async (req, res) => {
+// ✅ Unified Payment Route - Handles both initiation & success/failure
+exports.processPayment = async (req, res) => {
   try {
-    const { amount } = req.body;
-    const user = await User.findById(req.user.id);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+    const { amount, donorName, donorEmail, campaignId } = req.body;
+
+    if (!amount || !donorName || !donorEmail || !campaignId) {
+      return res.status(400).json({ error: "Missing required fields" });
     }
-    
-    const txnid = `txn_${Date.now()}`;
-    const paymentData = {
+
+    // Generate Transaction Details
+    const txnid = "Txn" + new Date().getTime();
+    const productinfo = "Donation";
+
+    const udf1 = campaignId;
+    const udf2 = "",
+      udf3 = "",
+      udf4 = "",
+      udf5 = "",
+      udf6 = "",
+      udf7 = "",
+      udf8 = "",
+      udf9 = "",
+      udf10 = "";
+
+    // ✅ Construct hash string
+    const hashString = `${PAYU_KEY}|${txnid}|${amount}|${productinfo}|${donorName}|${donorEmail}|${udf1}|${udf2}|${udf3}|${udf4}|${udf5}|${udf6}|${udf7}|${udf8}|${udf9}|${udf10}|${PAYU_SALT}`;
+
+    const hash = crypto.createHash("sha512").update(hashString).digest("hex");
+
+    // Prepare PayU Payment Data
+    const payuData = {
       key: PAYU_KEY,
       txnid,
       amount,
-      productinfo: "Donation",
-      firstname: user.name,
-      email: user.email,
-      phone: user.phone,
-      surl: `${process.env.BASE_URL}/api/payment/success`,
-      furl: `${process.env.BASE_URL}/api/payment/failure`,
-      hash: generatePayUHash({ txnid, amount, productinfo: "Donation", firstname: user.name, email: user.email })
+      productinfo,
+      firstname: donorName,
+      email: donorEmail,
+      phone: "9999999999",
+      surl: `http://localhost:5173/paymentSuccess/${campaignId}/${txnid}/${amount}/${donorEmail}/${donorName}`,
+      furl: `http://localhost:5173/paymentFailure/${campaignId}`,
+      hash,
+      action: PAYU_BASE_URL,
+      udf1,
     };
-    
-    res.status(200).json({ success: true, paymentData });
+
+    console.log(payuData);
+
+    res.json({ loading: true, paymentData: payuData });
   } catch (error) {
-    res.status(500).json({ message: "Server Error", error: error.message });
+    console.error("🚨 Payment initiation error:", error);
+    res.status(500).json({
+      loading: false,
+      success: false,
+      message: "Server Error",
+      error: error.message,
+    });
   }
 };
 
-// POST /api/payment/success
-exports.paymentSuccess = async (req, res) => {
+// Receives PayU's Payment Confirmation
+exports.handlePaymentSuccess = async (req, res) => {
   try {
-    const { txnid, amount, campaignId } = req.body;
-    const donorId = req.user.id;
+    const { txnid, amount, campaignId, donorEmail, donorName } = req.body;
 
-    const user1 = await User.findById(donorId);
-    if (!user1) {
-      return res.status(404).json({ message: "User not found" });
+    if (!campaignId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing campaignId" });
     }
 
-    // Find and update payment status
-    let donorPaymentStatus = await PaymentStatus.findOne({ user: donorId });
-    if (!donorPaymentStatus) {
-      donorPaymentStatus = await PaymentStatus.create({
-        user: donorId,
-        name: user1.name,
-        email: user1.email,
-        funds: 0,
-        donationDetails: [],
-        withdrawalDetails: [],
-      });
+    // Step 1: Find Donor
+    const donor = await User.findOne({ email: donorEmail });
+    if (!donor) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     }
-    donorPaymentStatus.donationDetails.push({ transactionId: txnid, amount, date: new Date() });
-    await donorPaymentStatus.save();
 
+    // Step 2: Find Campaign & Creator
     const campaign = await Campaign.findById(campaignId).populate("creator");
-    if (!campaign) {
-      return res.status(404).json({ message: "Campaign not found" });
+    if (!campaign || !campaign.creator) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Campaign not found" });
     }
 
-    const user2 = await User.findById(campaign.creator._id);
-    if (!user2) {
-      return res.status(404).json({ message: "User not found" });
+    const existingPayment = await PaymentStatus.findOne({ txnid });
+    if (existingPayment) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Payment already processed!" });
     }
 
-    let creatorPaymentStatus = await PaymentStatus.findOne({ user: campaign.creator._id });
-    if (!creatorPaymentStatus) {
-      creatorPaymentStatus = await PaymentStatus.create({
-        user: campaign.creator._id,
-        name: user2.name,
-        email: user2.email,
+    // Step 3: Prevent Duplicate Transaction Processing
+    let donorPaymentStatus = await PaymentStatus.findOne({ user: donor._id });
+
+    if (donorPaymentStatus) {
+      // Check if the transaction already exists in donation details
+      const existingTransaction = donorPaymentStatus.donationDetails.some(
+        (d) => d.transactionId === txnid
+      );
+      if (existingTransaction) {
+        return res.status(200).json({
+          success: false,
+          message: "Duplicate transaction detected, ignoring.",
+        });
+      }
+    } else {
+      // Create PaymentStatus if it doesn't exist
+      donorPaymentStatus = await PaymentStatus.create({
+        user: donor._id,
+        name: donor.name,
+        email: donor.email,
         funds: 0,
         donationDetails: [],
         withdrawalDetails: [],
       });
     }
-    creatorPaymentStatus.funds += amount;
-    await creatorPaymentStatus.save();
 
-    // Update campaign donation details
-    campaign.donationDetails.push({
-      name: user1.name,
+    // Step 4: Add Donation Details to Donor's PaymentStatus
+    donorPaymentStatus.donationDetails.push({
+      campaignId: campaign._id,
+      campaign: campaign.name,
+      transactionId: txnid,
       amount,
+      date: new Date(),
     });
 
-    campaign.raisedFunds += amount;
+    // Step 5: Handle Self Donation or Transfer to Creator
+    const isSelfDonation = donor._id.equals(campaign.creator._id);
+
+    if (isSelfDonation) {
+      donorPaymentStatus.funds += Number(amount);
+      await donorPaymentStatus.save();
+    } else {
+      // Step 6: Get or Create PaymentStatus for Creator
+      let creatorPaymentStatus = await PaymentStatus.findOne({
+        user: campaign.creator._id,
+      });
+
+      if (!creatorPaymentStatus) {
+        creatorPaymentStatus = await PaymentStatus.create({
+          user: campaign.creator._id,
+          name: campaign.creator.name,
+          email: campaign.creator.email,
+          funds: 0,
+          donationDetails: [],
+          withdrawalDetails: [],
+        });
+      }
+
+      creatorPaymentStatus.funds += Number(amount);
+      await creatorPaymentStatus.save();
+    }
+
+    // Step 7: Update Campaign Details
+    campaign.donationDetails.push({
+      name: donorName,
+      transactionId: txnid,
+      amount,
+    });
+    campaign.raisedFunds += Number(amount);
     campaign.backers += 1;
     await campaign.save();
 
-    res.status(200).json({ success: true, message: "Payment successful", campaign });
+    // Send Success Response
+    res
+      .status(200)
+      .json({ success: true, message: "Payment successfully processed" });
   } catch (error) {
-    res.status(500).json({ message: "Server Error", error: error.message });
+    console.error("🚨 Processing Error:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Server Error", error: error.message });
+  }
+};
+
+exports.getPaymentStatus = async (req, res) => {
+  try {
+    const paymentStatus = await PaymentStatus.findOne({ user: req.user.id });
+
+    if (paymentStatus && paymentStatus.user.toString() === req.user.id) {
+      return res.json(paymentStatus);
+    }
+
+    res.status(404).json({ message: "Payment status not found" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
   }
 };
 
 // POST /api/payment/withdraw
 exports.initiateWithdrawal = async (req, res) => {
-    try {
-      const userId = req.user.id;
-      const { accountHolderName, accountNumber, ifscCode, amount, campaignId } = req.body;
-      
-      // Check user's payment status
-      let paymentStatus = await PaymentStatus.findOne({ user: userId });
-      if (!paymentStatus || paymentStatus.funds < amount) {
-        return res.status(400).json({ message: "Insufficient funds" });
-      }
-  
-      // Verify campaign ownership
-      let campaign = await Campaign.findOne({ _id: campaignId, creator: userId });
-      if (!campaign) {
-        return res.status(404).json({ message: "Campaign not found or unauthorized" });
-      }
-  
-      // MOCKING PAYU WITHDRAWAL SUCCESS ✅
-      const mockPayoutResponse = {
-        status: "success",
-        message: "Mock withdrawal successful",
-        transactionId: `MOCK_TXN_${Date.now()}`,
-      };
-  
-      if (mockPayoutResponse.status !== "success") {
-        return res.status(400).json({ message: "Mock Withdrawal failed" });
-      }
-  
-      // Deduct funds & update withdrawal details
-      paymentStatus.funds -= amount;
-      campaign.fundsWithdrawn += amount;
-  
-      const withdrawalRecord = {
-        bankName: "Mock Bank",
-        accountHolderName,
-        accountNumber,
-        ifscCode,
-        amount,
-        date: new Date(),
-        campaignId,
-        transactionId: mockPayoutResponse.transactionId,
-        otpVerified: true, // Since it's mock, assuming OTP is always verified
-      };
-  
-      paymentStatus.withdrawalDetails.push(withdrawalRecord);
-      await paymentStatus.save();
-      await campaign.save();
-  
-      res.status(200).json({
-        success: true,
-        message: "Mock Withdrawal initiated successfully",
-        transactionId: mockPayoutResponse.transactionId,
-        paymentStatus,
-        campaign,
-      });
-    } catch (error) {
-      res.status(500).json({ message: "Server Error", error: error.message });
+  try {
+    const userId = req.user.id;
+    const { accountHolderName, accountNumber, ifscCode, amount, campaignId } =
+      req.body;
+
+    // Check user's payment status
+    let paymentStatus = await PaymentStatus.findOne({ user: userId });
+    if (!paymentStatus || paymentStatus.funds < amount) {
+      return res.status(400).json({ message: "Insufficient funds" });
     }
-  };
-  
 
-// previous code dummy testing without payU
+    // Verify campaign ownership
+    let campaign = await Campaign.findOne({ _id: campaignId, creator: userId });
+    if (!campaign) {
+      return res
+        .status(404)
+        .json({ message: "Campaign not found or unauthorized" });
+    }
 
-// const PaymentStatus = require("../models/Payment");
-// const User = require("../models/User");
-// const Campaign = require("../models/Campaign");
+    // MOCKING PAYU WITHDRAWAL SUCCESS ✅
+    const mockPayoutResponse = {
+      status: "success",
+      message: "Mock withdrawal successful",
+      transactionId: `MOCK_TXN_${Date.now()}`,
+    };
 
-// // GET /api/payment
-// exports.getPaymentStatus = async (req, res) => {
-//   try {
-//     const userId = req.user.id;
-//     let paymentStatus = await PaymentStatus.findOne({ user: userId });
-//     res.status(200).json({ success: true, paymentStatus });
-//   } catch (error) {
-//     res.status(500).json({ message: "Server Error", error: error.message });
-//   }
-// };
+    if (mockPayoutResponse.status !== "success") {
+      return res.status(400).json({ message: "Mock Withdrawal failed" });
+    }
 
-// // PUT /api/payment/donate
-// exports.updateDonation = async (req, res) => {
-//   try {
-//     const donorId = req.user.id;
-//     const { transactionId, paymentId, receipt, amount, campaignId } = req.body;
+    // Deduct funds & update withdrawal details
+    paymentStatus.funds -= amount;
+    campaign.fundsWithdrawn += amount;
 
-//     if (!campaignId) {
-//       return res.status(400).json({ message: "Campaign ID is required" });
-//     }
+    const withdrawalRecord = {
+      bankName: "Mock Bank",
+      accountHolderName,
+      accountNumber,
+      ifscCode,
+      amount,
+      date: new Date(),
+      campaignId,
+      transactionId: mockPayoutResponse.transactionId,
+      otpVerified: true, // Since it's mock, assuming OTP is always verified
+    };
 
-//     // Find the campaign
-//     const campaign = await Campaign.findById(campaignId).populate("creator");
-//     if (!campaign) {
-//       return res.status(404).json({ message: "Campaign not found" });
-//     }
+    paymentStatus.withdrawalDetails.push(withdrawalRecord);
+    await paymentStatus.save();
+    await campaign.save();
 
-//     const campaignCreatorId = campaign.creator._id;
-
-//     const user = await User.findById(req.user.id).select("-password");
-//     if (!user) {
-//       return res.status(404).json({ message: "User not found" });
-//     }
-
-//     // Find or create PaymentStatus for the donor
-//     let donorPaymentStatus = await PaymentStatus.findOne({ user: donorId });
-//     if (!donorPaymentStatus) {
-//       donorPaymentStatus = await PaymentStatus.create({
-//         user: donorId,
-//         name: user.name,
-//         email: user.email,
-//         funds: 0,
-//         donationDetails: [],
-//         withdrawalDetails: [],
-//       });
-//     }
-
-//     // Record the donation in the donor's PaymentStatus
-//     const donationRecord = {
-//       transactionId,
-//       paymentId,
-//       receipt,
-//       amount,
-//       date: new Date(),
-//     };
-//     donorPaymentStatus.donationDetails.push(donationRecord);
-//     await donorPaymentStatus.save();
-
-//     // Find or create PaymentStatus for the campaign creator
-//     let creatorPaymentStatus = await PaymentStatus.findOne({
-//       user: campaignCreatorId,
-//     });
-//     if (!creatorPaymentStatus) {
-//       creatorPaymentStatus = await PaymentStatus.create({
-//         user: campaignCreatorId,
-//         name: campaign.creator.name,
-//         email: campaign.creator.email,
-//         funds: 0,
-//         donationDetails: [],
-//         withdrawalDetails: [],
-//       });
-//     }
-
-//     // Add the donated amount to the campaign creator's funds
-//     creatorPaymentStatus.funds += amount;
-//     await creatorPaymentStatus.save();
-
-//     // Update campaign donation details
-//     campaign.donationDetails.push({
-//       name: user.name,
-//       amount,
-//     });
-//     campaign.raisedFunds += amount;
-//     campaign.backers += 1;
-//     await campaign.save();
-
-//     res.status(200).json({
-//       success: true,
-//       message: "Donation successfully recorded",
-//       donorPaymentStatus,
-//       creatorPaymentStatus,
-//       campaign,
-//     });
-//   } catch (error) {
-//     res.status(500).json({ message: "Server Error", error: error.message });
-//   }
-// };
-
-// // POST /api/payment/withdraw
-// exports.initiateWithdrawal = async (req, res) => {
-//     try {
-//       const userId = req.user.id;
-//       const {
-//         bankName,
-//         accountHolderName,
-//         accountNumber,
-//         ifscCode,
-//         amount,
-//         campaignId,
-//       } = req.body;
-  
-//       // Find payment status of the requester (campaign creator)
-//       let paymentStatus = await PaymentStatus.findOne({ user: userId });
-//       if (!paymentStatus) {
-//         return res.status(404).json({ message: "Payment status not found" });
-//       }
-  
-//       if (paymentStatus.funds < amount) {
-//         return res.status(400).json({ message: "Insufficient funds" });
-//       }
-  
-//       // Find campaign associated with the user
-//       let campaign = await Campaign.findOne({ _id: campaignId, creator: userId });
-//       if (!campaign) {
-//         return res
-//           .status(404)
-//           .json({ message: "Campaign not found or unauthorized" });
-//       }
-  
-//       // Check if a withdrawal record already exists for the campaign
-//       let existingWithdrawal = paymentStatus.withdrawalDetails.find(
-//         (record) => record.campaignId.toString() === campaignId
-//       );
-  
-//       if (existingWithdrawal) {
-//           existingWithdrawal.bankName = bankName,
-//           existingWithdrawal.accountHolderName = accountHolderName,
-//           existingWithdrawal.accountNumber = accountNumber,
-//           existingWithdrawal.ifscCode = ifscCode,
-//           existingWithdrawal.otpVerified = false,
-//           existingWithdrawal.amount = amount
-//       } else {
-//         // Create new withdrawal record
-//         const withdrawalRecord = {
-//           bankName,
-//           accountHolderName,
-//           accountNumber,
-//           ifscCode,
-//           otpVerified: false,
-//           amount,
-//           date: new Date(),
-//           campaignId,
-//         };
-        
-//         paymentStatus.withdrawalDetails.push(withdrawalRecord);
-//       }
-      
-//       await paymentStatus.save();
-  
-//       res.status(200).json({
-//         success: true,
-//         message: "Withdrawal initiated, OTP sent",
-//       });
-//     } catch (error) {
-//       res.status(500).json({ message: "Server Error", error: error.message });
-//     }
-//   };
-  
-// // PUT /api/payment/withdraw/verify
-// exports.verifyWithdrawal = async (req, res) => {
-//     try {
-//       const userId = req.user.id;
-//       const { otp } = req.body;
-  
-//       // OTP simulation dummy
-//       if (otp !== "123456") {
-//         return res.status(400).json({ message: "Invalid OTP" });
-//       }
-  
-//       let paymentStatus = await PaymentStatus.findOne({ user: userId });
-//       if (!paymentStatus) {
-//         return res.status(404).json({ message: "Payment status not found" });
-//       }
-  
-//       // Find the related campaign
-//       let campaign = await Campaign.findOne({creator: userId });
-//       if (!campaign) {
-//         return res.status(404).json({ message: "Campaign not found or unauthorized" });
-//       }
-  
-//       // Find the correct withdrawal record for the campaign
-//       let withdrawalRecord = paymentStatus.withdrawalDetails.find(
-//         (record) => record.campaignId.toString() === campaign.id
-//       );
-  
-//       if (!withdrawalRecord) {
-//         return res.status(404).json({ message: "Withdrawal record not found" });
-//       }
-  
-//       if (withdrawalRecord.otpVerified) {
-//         return res.status(400).json({ message: "Withdrawal already verified" });
-//       }
-  
-//       // Ensure withdrawal amount is a valid number
-//     //   const withdrawalAmount = Number(withdrawalRecord.amount);
-//     //   if (isNaN(withdrawalAmount) || withdrawalAmount <= 0) {
-//     //     return res.status(400).json({ message: "Invalid withdrawal amount" });
-//     //   }
-  
-//       // Mark withdrawal as verified
-//       withdrawalRecord.otpVerified = true;
-  
-//       // Deduct the withdrawn amount from paymentStatus and campaign
-//       paymentStatus.funds -= withdrawalRecord.amount;
-//       campaign.fundsWithdrawn += withdrawalRecord.amount;
-  
-//       await paymentStatus.save();
-//       await campaign.save();
-  
-//       res.status(200).json({
-//         success: true,
-//         message: "Withdrawal verified and processed successfully",
-//         paymentStatus,
-//         campaign,
-//       });
-//     } catch (error) {
-//       res.status(500).json({ message: "Server Error", error: error.message });
-//     }
-//   };
-  
+    res.status(200).json({
+      success: true,
+      message: "Mock Withdrawal initiated successfully",
+      transactionId: mockPayoutResponse.transactionId,
+      paymentStatus,
+      campaign,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Server Error", error: error.message });
+  }
+};

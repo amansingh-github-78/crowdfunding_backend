@@ -8,8 +8,9 @@ const CommentSchema = new mongoose.Schema({
 });
 
 const DonationDetailSchema = new mongoose.Schema({
-  name: String,
-  amount: Number,
+  transactionId: { type: String },
+  name: { type: String },
+  amount: { type: Number },
 });
 
 const MessageSchema = new mongoose.Schema({
@@ -71,9 +72,9 @@ const CampaignSchema = new mongoose.Schema(
         url: { type: String },
       },
     ],
-    videos: { type: [String] }, // array of video links (strings)
+    videos: { type: [String] },
     raisedFunds: { type: Number, default: 0 },
-    updates: { type: [String], default: [] },
+    updates: { type: [String] },
     backers: { type: Number, default: 0 },
     comments: { type: [CommentSchema], default: [] },
     messages: { type: [MessageSchema], default: [] },

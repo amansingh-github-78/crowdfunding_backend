@@ -133,32 +133,32 @@ exports.verifyOtp = async (req, res) => {
     try {
       const { otp } = req.body; // OTP from client input
       const decoded = req.tempUserData; // Data attached by middleware
-  
+      console.log("otp is:", otp)
+      console.log("decoded data is" , decoded)
       // Check if the provided OTP matches the one stored in the token
       if (decoded.otp !== otp) {
         return res.status(400).json({ message: "Invalid OTP" });
       }
+      console.log("Otp and Decoded match")
   
       // Ensure user hasn't been created in the meantime
       const userExists = await User.findOne({ email: decoded.email });
       if (userExists) {
         return res.status(400).json({ message: "User already exists" });
       }
+      console.log("User Doesn't exists")
   
       // Hash the provided password from the token data
       const hashedPassword = await bcrypt.hash(decoded.password, 10);
-  
+      console.log("Password hashed")
+
       // Create the new user in the database
       const newUser = await User.create({
         name: decoded.name,
         email: decoded.email,
         password: hashedPassword,
       });
-  
-      // Generate a final JWT token for the created user
-      const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, {
-        expiresIn: "7d",
-      });
+      console.log("User created successfully")
   
       res.status(201).json({
         success: true,
@@ -167,11 +167,12 @@ exports.verifyOtp = async (req, res) => {
           id: newUser._id,
           name: newUser.name,
           email: newUser.email,
-          token,
         },
       });
+      console.log("Success response is send")
     } catch (error) {
       res.status(500).json({ message: "Server Error", error: error.message });
+      console.log("Error response is send")
     }
   };
 
@@ -216,13 +217,9 @@ exports.forgotPassword = async (req, res) => {
     // Generate Reset Token
     const resetToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "15m" });
 
-    // Save resetToken in DB
-    user.resetToken = resetToken;
-    await user.save();
-
     // Send email
     const transporter = createTransporter();
-    const resetLink = `http://192.168.1.10:5173/authentication/${resetToken}`; // Will Update later during Integration
+    const resetLink = `http://192.168.1.10:5173/reset/${resetToken}`;
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: email,
@@ -245,6 +242,7 @@ exports.resetPassword = async (req, res) => {
     if (!token) {
       return res.status(400).json({ message: "Token is required" });
     }
+    console.log(req.body)
 
     const { newPassword } = req.body;
     // Verify token

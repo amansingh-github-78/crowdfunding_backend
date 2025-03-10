@@ -1,25 +1,19 @@
 const express = require("express");
-const router = express.Router();
-const paymentController = require("../controllers/paymentControllers");
+const paymentControllers = require("../controllers/paymentControllers");
 const authMiddleware = require("../middleware/authMiddleware");
 
-// Initiate PayU Payment
-router.post("/initiate", authMiddleware, paymentController.initiatePayment);
+const router = express.Router();
 
-// Handle PayU Success Webhook
-router.post("/success", authMiddleware, paymentController.paymentSuccess);
+// ✅ Payment Processing Route
+router.post("/process", authMiddleware, paymentControllers.processPayment);
 
-// // Initiate withdrawal request (for campaigners) using PayU Payout API
-router.post("/withdraw", authMiddleware, paymentController.initiateWithdrawal);
+// ✅ Route to Receive PayU Response
+router.post("/success", paymentControllers.handlePaymentSuccess);
 
-// Ignore Below Routes
-// Get PaymentStatus for logged-in user
-// router.get("/", authMiddleware, paymentController.getPaymentStatus);
+// getting payment status info
+router.get("/paymentStatus", authMiddleware, paymentControllers.getPaymentStatus);
 
-// Update donation details after a successful donation
-// router.put("/donate", authMiddleware, paymentController.updateDonation);
-
-// // Verify withdrawal OTP and finalize withdrawal
-// router.put("/withdraw/verify", authMiddleware, paymentController.verifyWithdrawal);
+// Initiate withdrawal request (for campaigners) using Razorpay Payout API (Mock)
+router.post("/withdraw", authMiddleware, paymentControllers.initiateWithdrawal);
 
 module.exports = router;
