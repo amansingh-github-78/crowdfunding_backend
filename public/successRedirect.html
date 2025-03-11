@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Successful</title>
+    <script>
+        window.onload = function () {
+            var params = new URLSearchParams(window.location.search);
+
+            var campaignId = params.get("campaignId") || "unknown";
+            var txnid = params.get("txnid") || "unknown";
+            var amount = params.get("amount") || "0";
+            var donorEmail = params.get("donorEmail") || "unknown";
+            var donorName = params.get("donorName") || "unknown";
+            var payuSuccessUrl = "https://crowdfunding-frontend-nine.vercel.app";
+
+            var redirectUrl = `${payuSuccessUrl}/paymentSuccess/${campaignId}/${txnid}/${amount}/${donorEmail}/${donorName}`;
+
+            window.location.href = redirectUrl;
+        };
+    </script>
+</head>
+<body>
+    <h3>Processing payment success... Redirecting...</h3>
+</body>
+</html>

@@ -6,8 +6,8 @@ const PaymentStatus = require("../models/Payment");
 const PAYU_KEY = process.env.PAYU_MERCHANT_KEY;
 const PAYU_SALT = process.env.PAYU_MERCHANT_SALT;
 const PAYU_BASE_URL = process.env.PAYU_BASE_URL; // PayU API URL
-const PAYU_SUCCESS_URL = process.env.PAYU_SUCCESS_URL
-const PAYU_FAILURE_URL = process.env.PAYU_FAILURE_URL
+// const PAYU_SUCCESS_URL = process.env.PAYU_SUCCESS_URL
+// const PAYU_FAILURE_URL = process.env.PAYU_FAILURE_URL
 
 // ✅ Unified Payment Route - Handles both initiation & success/failure
 exports.processPayment = async (req, res) => {
@@ -47,8 +47,8 @@ exports.processPayment = async (req, res) => {
       firstname: donorName,
       email: donorEmail,
       phone: "9999999999",
-      surl: `${PAYU_SUCCESS_URL}/paymentSuccess/${campaignId}/${txnid}/${amount}/${donorEmail}/${donorName}`,
-      furl: `${PAYU_FAILURE_URL}/paymentFailure/${campaignId}`,
+      surl: `${process.env.BACKEND_URL}/successRedirect/${campaignId}/${txnid}/${amount}/${donorEmail}/${donorName}`,
+      furl: `${process.env.BACKEND_URLL}/successFailure/${campaignId}`,
       hash,
       action: PAYU_BASE_URL,
       udf1,

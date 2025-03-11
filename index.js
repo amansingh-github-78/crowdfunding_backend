@@ -1,13 +1,18 @@
 const express = require("express");
+const helmet = require("helmet"); 
 const connectDB = require("./config/db");
 const cors = require("cors");
 const http = require("http");
 const socketIo = require("socket.io");
+const path = require("path");
 require("dotenv").config();
 
 const app = express();
 connectDB();
 
+app.use(express.static(path.join(__dirname, "public")));
+app.use(express.urlencoded({ extended: true }));
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json());
 app.use(cors());
 
@@ -34,6 +39,33 @@ io.on("connection", (socket) => {
     console.log("User Disconnected:", socket.id);
   });
 });
+
+app.post("/successRedirect/:campaignId/:txnid/:amount/:donorEmail/:donorName", (req, res) => {
+  const { campaignId, txnid, amount, donorEmail, donorName } = req.params;
+
+  // Construct redirect URL with GET parameters
+  const queryParams = new URLSearchParams({
+      campaignId: campaignId || "unknown",
+      txnid: txnid || "unknown",
+      amount: amount || "0",
+      donorEmail: donorEmail || "unknown",
+      donorName: donorName || "unknown",
+  }).toString();
+
+  res.redirect(`/successRedirect.html?${queryParams}`);
+});
+
+app.post("/failureRedirect/:campaignId", (req, res) => {
+  const { campaignId } = req.params;
+
+  const queryParams = new URLSearchParams({
+      campaignId: campaignId || "unknown",
+      txnid: txnid || "unknown",
+  }).toString();
+
+  res.redirect(`/failureRedirect.html?${queryParams}`);
+});
+
 
 app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/campaigns", require("./routes/campaignRoutes"));

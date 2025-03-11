@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Failed</title>
+    <script>
+        window.onload = function () {
+            // Extract URL parameters from PayU's response
+            var params = new URLSearchParams(window.location.search);
+
+            var campaignId = params.get("campaignId") || "unknown";
+            var payuFailureUrl = "https://crowdfunding-frontend-nine.vercel.app"; // Replace with actual frontend failure URL
+
+            // Construct the redirect URL dynamically
+            var redirectUrl = `${payuFailureUrl}/paymentFailure/${campaignId}`;
+
+            // Redirect using GET
+            window.location.href = redirectUrl;
+        };
+    </script>
+</head>
+<body>
+    <h3>Processing payment failure... Redirecting...</h3>
+</body>
+</html>
