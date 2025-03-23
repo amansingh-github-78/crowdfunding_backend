@@ -66,6 +66,7 @@ const CampaignSchema = new mongoose.Schema(
       type: String,
       enum: ["Yes","No","Denied"],
       default: "No"},
+    verificationDenyReason : {type: String, default: "Not Given"},
     images: [
       {
         public_id: { type: String },

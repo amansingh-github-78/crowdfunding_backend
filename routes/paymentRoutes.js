@@ -5,7 +5,7 @@ const authMiddleware = require("../middleware/authMiddleware");
 const router = express.Router();
 
 // ✅ Payment Processing Route
-router.post("/process", authMiddleware, paymentControllers.processPayment);
+router.post("/process", paymentControllers.processPayment);
 
 // ✅ Route to Receive PayU Response
 router.post("/success", paymentControllers.handlePaymentSuccess);

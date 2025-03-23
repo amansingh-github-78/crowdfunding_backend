@@ -5,8 +5,11 @@ const userSchema = new mongoose.Schema(
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
+    resetToken: {type: String, default: null},
     contact: { type: Number },
     bio: { type: String },
+    backedCampaigns: {type: Number},
+    createdCampaigns: {type: Number},
     admin: {
       type: String,
       enum: ["Yes", "No"],

@@ -54,8 +54,6 @@ exports.processPayment = async (req, res) => {
       udf1,
     };
 
-    console.log(payuData);
-
     res.json({ loading: true, paymentData: payuData });
   } catch (error) {
     console.error("🚨 Payment initiation error:", error);
@@ -79,12 +77,54 @@ exports.handlePaymentSuccess = async (req, res) => {
         .json({ success: false, message: "Missing campaignId" });
     }
 
-    // Step 1: Find Donor
-    const donor = await User.findOne({ email: donorEmail });
-    if (!donor) {
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
+    let donor;
+    let donorPaymentStatus;
+    let isAnonymous = false;
+    let finalDonorEmail = donorEmail; // Create a mutable copy
+
+    // Step 1: Handle Anonymous Donor
+    if (donorEmail === "anonymous") {
+      isAnonymous = true;
+
+      // Generate unique anonymous email
+      let counter = 1;
+      let newAnonymousEmail = `anonymous${counter}@fundmyknowledge.com`;
+
+      while (await PaymentStatus.findOne({ email: newAnonymousEmail })) {
+        counter++;
+        newAnonymousEmail = `anonymous${counter}@fundmyknowledge.com`;
+      }
+
+      finalDonorEmail = newAnonymousEmail; // Assign to a new variable
+
+      donorPaymentStatus = await PaymentStatus.create({
+        name: donorName,
+        email: finalDonorEmail,
+        funds: 0,
+        donationDetails: [],
+        withdrawalDetails: [],
+      });
+    } else {
+      // Find Donor in DB
+      donor = await User.findOne({ email: donorEmail });
+      if (!donor) {
+        return res
+          .status(404)
+          .json({ success: false, message: "Donor not found" });
+      }
+
+      donorPaymentStatus = await PaymentStatus.findOne({ user: donor._id });
+
+      if (!donorPaymentStatus) {
+        donorPaymentStatus = await PaymentStatus.create({
+          user: donor._id,
+          name: donor.name,
+          email: donor.email,
+          funds: 0,
+          donationDetails: [],
+          withdrawalDetails: [],
+        });
+      }
     }
 
     // Step 2: Find Campaign & Creator
@@ -103,48 +143,33 @@ exports.handlePaymentSuccess = async (req, res) => {
     }
 
     // Step 3: Prevent Duplicate Transaction Processing
-    let donorPaymentStatus = await PaymentStatus.findOne({ user: donor._id });
-
-    if (donorPaymentStatus) {
-      // Check if the transaction already exists in donation details
-      const existingTransaction = donorPaymentStatus.donationDetails.some(
-        (d) => d.transactionId === txnid
-      );
-      if (existingTransaction) {
-        return res.status(200).json({
-          success: false,
-          message: "Duplicate transaction detected, ignoring.",
-        });
-      }
-    } else {
-      // Create PaymentStatus if it doesn't exist
-      donorPaymentStatus = await PaymentStatus.create({
-        user: donor._id,
-        name: donor.name,
-        email: donor.email,
-        funds: 0,
-        donationDetails: [],
-        withdrawalDetails: [],
+    if (
+      donorPaymentStatus.donationDetails.some((d) => d.transactionId === txnid)
+    ) {
+      return res.status(200).json({
+        success: false,
+        message: "Duplicate transaction detected, ignoring.",
       });
     }
 
-    // Step 4: Add Donation Details to Donor's PaymentStatus
+    // Step 4: Add Donation Details
     donorPaymentStatus.donationDetails.push({
       campaignId: campaign._id,
-      campaign: campaign.name,
+      campaign: campaign.title,
       transactionId: txnid,
       amount,
       date: new Date(),
     });
 
+    await donorPaymentStatus.save();
+
     // Step 5: Handle Self Donation or Transfer to Creator
-    const isSelfDonation = donor._id.equals(campaign.creator._id);
+    const isSelfDonation = !isAnonymous && donor._id.equals(campaign.creator._id);
 
     if (isSelfDonation) {
       donorPaymentStatus.funds += Number(amount);
       await donorPaymentStatus.save();
     } else {
-      // Step 6: Get or Create PaymentStatus for Creator
       let creatorPaymentStatus = await PaymentStatus.findOne({
         user: campaign.creator._id,
       });
@@ -164,7 +189,7 @@ exports.handlePaymentSuccess = async (req, res) => {
       await creatorPaymentStatus.save();
     }
 
-    // Step 7: Update Campaign Details
+    // Step 6: Update Campaign Details
     campaign.donationDetails.push({
       name: donorName,
       transactionId: txnid,
@@ -174,17 +199,24 @@ exports.handlePaymentSuccess = async (req, res) => {
     campaign.backers += 1;
     await campaign.save();
 
+    console.log(donorPaymentStatus)
+
     // Send Success Response
-    res
-      .status(200)
-      .json({ success: true, message: "Payment successfully processed" });
+    res.status(200).json({
+      success: true,
+      message: "Payment successfully processed",
+      donorPaymentStatus,
+    });
   } catch (error) {
     console.error("🚨 Processing Error:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Server Error", error: error.message });
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: error.message,
+    });
   }
 };
+
 
 exports.getPaymentStatus = async (req, res) => {
   try {

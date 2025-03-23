@@ -24,7 +24,7 @@ exports.addComment = async (req, res) => {
 
     const commenter = await User.findById(req.user.id);
     if (!commenter) {
-      return res.status(404).json({ message: "Commenter not found" });
+      return res.status(404).json({ message: "Please Login First to comment..." });
     }
 
     const newComment = {

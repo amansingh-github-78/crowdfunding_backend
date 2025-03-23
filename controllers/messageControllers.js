@@ -10,17 +10,13 @@ exports.sendMessage = async (req, res) => {
 
     // Check if campaign exists
     const campaign = await Campaign.findById(campaignId);
-    if (!campaign) {
-      return res.status(404).json({ message: "Campaign not found" });
-    }
+    if (!campaign) return res.status(404).json({ message: "Campaign not found" });
 
-    // Fetch sender's name automatically using the senderId
+    // Fetch sender details
     const sender = await User.findById(senderId);
-    if (!sender) {
-      return res.status(404).json({ message: "Sender not found" });
-    }
+    if (!sender) return res.status(404).json({ message: "Sender not found" });
 
-    // Create message with senderName included
+    // Create message
     const message = {
       sender: senderId,
       senderName: sender.name,
@@ -29,20 +25,60 @@ exports.sendMessage = async (req, res) => {
       timestamp: new Date(),
     };
 
-    // Save message to campaign
+    // Save message in the campaign
     campaign.messages.push(message);
     await campaign.save();
 
-    // Emit real-time message event (if applicable)
+    // Emit real-time message event
     global.io.to(receiverId).emit("newMessage", message);
 
     res.status(201).json({ success: true, message });
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Server Error", error: error.message });
+    res.status(500).json({ message: "Server Error", error: error.message });
   }
 };
+
+// Reply to a Message
+exports.replyToMessage = async (req, res) => {
+  try {
+    const { campaignId, messageId } = req.params;
+    const { content } = req.body;
+    const senderId = req.user.id;
+
+    // Find campaign
+    const campaign = await Campaign.findById(campaignId);
+    if (!campaign) return res.status(404).json({ message: "Campaign not found" });
+
+    // Find the original message
+    const originalMessage = campaign.messages.id(messageId);
+    if (!originalMessage) return res.status(404).json({ message: "Message not found" });
+
+    // Fetch sender details
+    const sender = await User.findById(senderId);
+    if (!sender) return res.status(404).json({ message: "Sender not found" });
+
+    // Create reply message
+    const replyMessage = {
+      sender: senderId,
+      senderName: sender.name,
+      receiver: originalMessage.sender, // Replying to the sender of the original message
+      content,
+      timestamp: new Date(),
+    };
+
+    // Save reply in the campaign
+    campaign.messages.push(replyMessage);
+    await campaign.save();
+
+    // Emit real-time reply event
+    global.io.to(originalMessage.sender.toString()).emit("newMessage", replyMessage);
+
+    res.status(201).json({ success: true, replyMessage });
+  } catch (error) {
+    res.status(500).json({ message: "Server Error", error: error.message });
+  }
+};
+
 
 // Get Messages for a Campaign
 exports.getMessages = async (req, res) => {

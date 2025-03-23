@@ -17,17 +17,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // ✅ Move `upload.array("images", 10)` BEFORE `authMiddleware`
-router.post(
-  "/",
-  upload.array("images", 10), // Process files first
-  authMiddleware, // Authenticate after files are processed
-  (req, res, next) => {
-    console.log("Incoming Request Fields:", req.body);
-    console.log("Incoming Files:", req.files);
-    next();
-  },
-  campaignController.createCampaign
-);
+router.post("/",upload.array("images", 10), authMiddleware, campaignController.createCampaign);
 
 router.put("/:id", upload.array("images", 10), authMiddleware, campaignController.updateCampaign);
 

@@ -2,13 +2,21 @@ const User = require("../models/User");
 const Campaign = require("../models/Campaign");
 const Report = require("../models/Report");
 const nodemailer = require("nodemailer");
+const cloudinary = require("cloudinary").v2;
+
+// Configure Cloudinary with environment variables
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 // @desc    Update campaign verification status
 // @access  Admin
 exports.verifyCampaign = async (req, res) => {
   try {
     const { campaignId } = req.params;
-    const { verified } = req.body;
+    const { verified, verificationDenyReason } = req.body;
 
     if (!["Yes", "Denied"].includes(verified)) {
       return res.status(400).json({ message: "Invalid verification status" });
@@ -16,7 +24,7 @@ exports.verifyCampaign = async (req, res) => {
 
     const campaign = await Campaign.findByIdAndUpdate(
       campaignId,
-      { verified },
+      { verified, verificationDenyReason },
       { new: true }
     );
 
@@ -47,18 +55,25 @@ exports.deleteCampaign = async (req, res) => {
         .json({ message: "Reason for deletion is required" });
     }
 
-    const campaign = await Campaign.findById(campaignId)
+    const campaign = await Campaign.findById(campaignId);
     if (!campaign) {
       return res.status(404).json({ message: "Campaign not found" });
     }
 
-    const user = await User.findById(req.user.id)
+    const user = await User.findById(campaign.creator._id);
     if (!user) {
-        return res.status(404).json({ message: "User not found" });
-      }
+      return res.status(404).json({ message: "User not found" });
+    }
 
     const creatorEmail = user.email;
     const campaignTitle = campaign.title;
+
+    // Delete each image from Cloudinary
+    if (campaign.images && campaign.images.length > 0) {
+      for (const img of campaign.images) {
+        await cloudinary.uploader.destroy(img.public_id);
+      }
+    }
 
     await Campaign.findByIdAndDelete(campaignId);
 
@@ -82,7 +97,7 @@ exports.deleteCampaign = async (req, res) => {
       to: creatorEmail,
       subject: "Campaign Deletion Notice",
       html: `<p>Dear ${user.name},</p>
-             <p>Your campaign <strong>"${campaignTitle}"</strong> has been deleted.</p>
+             <p>Your campaign <strong>"${campaignTitle}"</strong> has been deleted by Admin.</p>
              <p><strong>Reason:</strong> ${reason}</p>
              <p>If you have any questions, please contact support.</p>`,
     };

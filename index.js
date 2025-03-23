@@ -34,6 +34,11 @@ io.on("connection", (socket) => {
     socket.join(userId);
   });
 
+  // Listen for new messages and broadcast to receiver
+  socket.on("sendMessage", ({ campaignId, message }) => {
+    io.to(message.receiver).emit("newMessage", message);
+  });
+
   // Handle Disconnect
   socket.on("disconnect", () => {
     console.log("User Disconnected:", socket.id);

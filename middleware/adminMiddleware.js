@@ -1,7 +1,4 @@
 const User = require("../models/User");
-const dotenv = require("dotenv");
-
-dotenv.config();
 
 // Middleware to check if the user is an admin
 const adminMiddleware = async (req, res, next) => {
@@ -19,7 +16,7 @@ const adminMiddleware = async (req, res, next) => {
     }
 
     // Check if the user's email matches the admin email in .env
-    if (user.email !== process.env.ADMIN_EMAIL) {
+    if (user.admin !== "Yes") {
       return res.status(403).json({ message: "Access denied. Admins only." });
     }
 

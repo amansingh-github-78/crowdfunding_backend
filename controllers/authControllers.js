@@ -94,7 +94,7 @@ exports.registerUser = async (req, res) => {
     // Check if user already exists
     const userExists = await User.findOne({ email });
     if (userExists) {
-      return res.status(400).json({ message: "User already exists" });
+      return res.status(400).json({ message: "Account Associated with this Email already exists" });
     }
 
     // Generate a 6-digit OTP as a string
@@ -190,7 +190,14 @@ exports.loginUser = async (req, res) => {
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: "24h",
     });
-    res.json({ token, user: { id: user._id, name: user.name, email: user.email } });
+
+    if(user.status == "banned"){
+      return res.status(400).json({ message: "Your Account is Permanently Banned by Admin." });
+    }else if(user.status == "blocked"){
+      return res.status(400).json({ message: "Your Account is Temporarily Blocked by Admin." });
+    }else{
+      res.json({ token, user: { id: user._id, name: user.name, email: user.email } });
+    }
   } catch (error) {
     res.status(500).json({ message: "Server error" });
   }
@@ -217,6 +224,9 @@ exports.forgotPassword = async (req, res) => {
     // Generate Reset Token
     const resetToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "15m" });
 
+    user.resetToken = resetToken
+    await user.save()
+
     // Send email
     const transporter = createTransporter();
     const resetLink = `http://192.168.1.10:5173/reset/${resetToken}`;
@@ -242,13 +252,12 @@ exports.resetPassword = async (req, res) => {
     if (!token) {
       return res.status(400).json({ message: "Token is required" });
     }
-    console.log(req.body)
 
     const { newPassword } = req.body;
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(decoded.id);
-    if (!user) {
+    if (!user || user.resetToken !== token) {
       return res.status(400).json({ message: "Invalid or expired token" });
     }
 
@@ -258,6 +267,7 @@ exports.resetPassword = async (req, res) => {
     user.password = hashedPassword;
     user.resetToken = null; // Remove reset token
     await user.save();
+
 
     res.json({ success: true, message: "Password reset successfully!" });
   } catch (error) {
