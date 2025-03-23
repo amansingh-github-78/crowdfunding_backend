@@ -229,7 +229,7 @@ exports.forgotPassword = async (req, res) => {
 
     // Send email
     const transporter = createTransporter();
-    const resetLink = `http://192.168.1.10:5173/reset/${resetToken}`;
+    const resetLink = `https://crowdfunding-frontend-nine.vercel.app/reset/${resetToken}`;
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: email,
